@@ -1,0 +1,8 @@
+{
+  "name": "laptop-robot-ui",
+  "version": "1.0.0",
+  "scripts": {
+    "dev": "npx http-server -p 3002 -o"
+  },
+  "dependencies": {}
+}

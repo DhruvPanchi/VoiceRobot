@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Robot UI – buttons & voice</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <style>
+    body { font-family: Arial; text-align: center; margin: 0; padding: 25px; }
+    input { padding: 6px 10px; font-size: 16px; width: 180px; }
+    button {
+      width: 120px; height: 50px; margin: 8px;
+      font-size: 17px; border: none; border-radius: 8px;
+      background: #4caf50; color: #fff;
+    }
+    button:hover { background: #45a049; }
+    #voiceBtns button {
+      width: 140px; height: 40px; background: #2196f3;
+    }
+    #voiceBtns button:hover { background: #1976d2; }
+    #labelBox {
+      font-family: monospace; text-align: left;
+      width: 260px; margin: 14px auto;
+      border: 1px solid #ccc; padding: 8px; border-radius: 6px;
+    }
+  </style>
+
+  <!-- TensorFlow.js and Speech Commands -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/speech-commands@0.5"></script>
+</head>
+<body>
+  <h2>Robot Control</h2>
+
+  <!-- ESP32 IP input -->
+  <p>
+    ESP32 IP: 
+    <input id="ip" placeholder="192.168.x.x">
+    <button onclick="setBase()">Set</button>
+  </p>
+
+  <!-- Manual control buttons -->
+  <button onclick="send('forward')">Forward</button><br>
+  <button onclick="send('left')">Left</button>
+  <button onclick="send('right')">Right</button><br>
+  <button onclick="send('backward')">Back</button>
+
+  <!-- Status display -->
+  <p id="stat">Last: —</p>
+
+  <!-- Voice control -->
+  <div id="voiceBtns">
+    <button onclick="startListening()">🎤 Start Voice</button>
+    <button onclick="stopListening()">⏹ Stop Voice</button>
+  </div>
+  <div id="labelBox" hidden></div>
+
+  <script>
+    /* ========== Network Helpers ========== */
+    let base = "";
+    function setBase() {
+      const ip = document.getElementById("ip").value.trim();
+      base = ip ? `http://${ip}` : "";
+      document.getElementById("stat").innerText = base
+        ? `Target set to ${base}`
+        : "Invalid IP";
+    }
+
+    async function send(cmd) {
+      if (!base) {
+        alert("Set IP first");
+        return;
+      }
+      console.log("Sending command:", cmd);
+
+      // Map simple cmd to full model label
+      const mapped = {
+        forward:  "Dhruv_forward",
+        backward: "Dhruv_backward",
+        left:     "Dhruv_left",
+        right:    "Dhruv_right"
+      };
+      const fullCmd = mapped[cmd.toLowerCase()];
+      if (!fullCmd) {
+        alert("Unknown command: " + cmd);
+        return;
+      }
+
+      try {
+        const res = await fetch(`${base}/command?cmd=${fullCmd}`);
+        document.getElementById("stat").innerText = `Last: ${fullCmd}`;
+      } catch (e) {
+        alert(`Fetch failed (is ESP32 up?): ${e.message}`);
+      }
+    }
+
+    /* ========== Voice Recognizer ========== */
+    const MODEL_URL = "http://127.0.0.1:3002/model/";
+    // Exactly match your trained labels
+    const CLASSES = [
+      "Background Noise",
+      "Dhruv_backward",
+      "Dhruv_forward",
+      "Dhruv_left",
+      "Dhruv_right",
+      "Other_forward"
+    ];
+    const CONF = 0.75;
+
+    let recognizer, last = "", box = document.getElementById("labelBox");
+
+    async function loadModel() {
+      recognizer = speechCommands.create(
+        "BROWSER_FFT", undefined,
+        MODEL_URL + "model.json", MODEL_URL + "metadata.json"
+      );
+      await recognizer.ensureModelLoaded();
+      console.log("Loaded model labels:", recognizer.wordLabels());
+      box.hidden = false;
+    }
+
+    async function startListening() {
+      if (!recognizer) await loadModel();
+
+      recognizer.listen(result => {
+        const scores = result.scores;
+        // find highest score index
+        const iMax = scores?.indexOf(Math.max(...scores)) ?? -1;
+        const label =
+          iMax >= 0 && iMax < CLASSES.length
+            ? CLASSES[iMax]
+            : undefined;
+        const conf = scores?.[iMax] ?? 0;
+
+        // display debug info
+        box.innerHTML = scores
+          ? CLASSES.map((c, i) =>
+              `${c}: ${scores[i]?.toFixed(2) ?? "N/A"}`
+            ).join("<br>")
+          : "No scores detected";
+
+        // only trigger when above threshold and new label
+        if (conf > CONF && label && label !== last) {
+          last = label;
+          console.log("Recognized label:", label);
+
+          // map full label to simple cmd
+          const labelToCmd = {
+            "Dhruv_forward":  "forward",
+            "Dhruv_backward": "backward",
+            "Dhruv_left":     "left",
+            "Dhruv_right":    "right"
+          };
+          const cmd = labelToCmd[label];
+          if (cmd) send(cmd);
+        }
+      }, {
+        includeSpectrogram:    true,
+        probabilityThreshold:  CONF,
+        overlapFactor:        0.5
+      });
+
+      document.getElementById("stat").innerText = "🎤 Listening…";
+    }
+
+    function stopListening() {
+      recognizer?.stopListening();
+      document.getElementById("stat").innerText = "Voice stopped.";
+    }
+  </script>
+</body>
+</html>
