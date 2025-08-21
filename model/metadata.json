@@ -1,1 +1,1 @@
-{"tfjsSpeechCommandsVersion":"0.4.0","modelName":"TMv2","timeStamp":"2025-07-31T00:02:15.231Z","wordLabels":["Background Noise","Dhruv_backward","Dhruv_forward","Dhruv_left","Dhruv_right","Other_forward"]}
+{"tfjsSpeechCommandsVersion":"0.4.0","modelName":"TMv2","timeStamp":"2025-08-18T01:27:43.291Z","wordLabels":["Background Noise","Dhruv_down","Dhruv_go","Dhruv_left","Dhruv_right","Other_down","Other_go","Other_left","Other_right"]}

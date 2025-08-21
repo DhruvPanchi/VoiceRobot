@@ -24,7 +24,7 @@
     }
   </style>
 
-  <!-- TensorFlow.js and Speech Commands -->
+  <!-- TensorFlow.js and Speech Commands (match your TM export) -->
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/speech-commands@0.5"></script>
 </head>
@@ -33,16 +33,16 @@
 
   <!-- ESP32 IP input -->
   <p>
-    ESP32 IP: 
+    ESP32 IP:
     <input id="ip" placeholder="192.168.x.x">
     <button onclick="setBase()">Set</button>
   </p>
 
   <!-- Manual control buttons -->
-  <button onclick="send('forward')">Forward</button><br>
+  <button onclick="send('go')">Forward</button><br>
   <button onclick="send('left')">Left</button>
   <button onclick="send('right')">Right</button><br>
-  <button onclick="send('backward')">Back</button>
+  <button onclick="send('down')">Back</button>
 
   <!-- Status display -->
   <p id="stat">Last: —</p>
@@ -72,12 +72,12 @@
       }
       console.log("Sending command:", cmd);
 
-      // Map simple cmd to full model label
+      // Map simple cmd to the ESP32 tokens you handle
       const mapped = {
-        forward:  "Dhruv_forward",
-        backward: "Dhruv_backward",
-        left:     "Dhruv_left",
-        right:    "Dhruv_right"
+        go:   "Dhruv_go",
+        down: "Dhruv_down",
+        left: "Dhruv_left",
+        right:"Dhruv_right"
       };
       const fullCmd = mapped[cmd.toLowerCase()];
       if (!fullCmd) {
@@ -86,7 +86,7 @@
       }
 
       try {
-        const res = await fetch(`${base}/command?cmd=${fullCmd}`);
+        await fetch(`${base}/command?cmd=${encodeURIComponent(fullCmd)}`);
         document.getElementById("stat").innerText = `Last: ${fullCmd}`;
       } catch (e) {
         alert(`Fetch failed (is ESP32 up?): ${e.message}`);
@@ -94,17 +94,11 @@
     }
 
     /* ========== Voice Recognizer ========== */
+    // Adjust to wherever you're serving your model:
     const MODEL_URL = "http://127.0.0.1:3002/model/";
-    // Exactly match your trained labels
-    const CLASSES = [
-      "Background Noise",
-      "Dhruv_backward",
-      "Dhruv_forward",
-      "Dhruv_left",
-      "Dhruv_right",
-      "Other_forward"
-    ];
+    let CLASSES = [];                    // will be filled from metadata
     const CONF = 0.75;
+    const ALLOWED_PREFIX = "Dhruv_";     // ignore labels not starting with this
 
     let recognizer, last = "", box = document.getElementById("labelBox");
 
@@ -114,48 +108,53 @@
         MODEL_URL + "model.json", MODEL_URL + "metadata.json"
       );
       await recognizer.ensureModelLoaded();
-      console.log("Loaded model labels:", recognizer.wordLabels());
+
+      // Use labels from the model to match scores[] order exactly
+      CLASSES = recognizer.wordLabels();
+      console.log("Loaded model labels:", CLASSES);
       box.hidden = false;
     }
+
+    function bestLabel(scores) {
+      let iMax = 0, best = scores[0] ?? 0;
+      for (let i = 1; i < scores.length; i++) {
+        const v = scores[i] ?? 0;
+        if (v > best) { best = v; iMax = i; }
+      }
+      return { index: iMax, label: CLASSES[iMax], conf: best };
+    }
+
+    const labelToCmd = {
+      "Dhruv_go":   "go",
+      "Dhruv_down": "down",
+      "Dhruv_left": "left",
+      "Dhruv_right":"right"
+      // NOTE: No Other_* mappings on purpose
+    };
 
     async function startListening() {
       if (!recognizer) await loadModel();
 
       recognizer.listen(result => {
-        const scores = result.scores;
-        // find highest score index
-        const iMax = scores?.indexOf(Math.max(...scores)) ?? -1;
-        const label =
-          iMax >= 0 && iMax < CLASSES.length
-            ? CLASSES[iMax]
-            : undefined;
-        const conf = scores?.[iMax] ?? 0;
+        const scores = result.scores || [];
 
-        // display debug info
-        box.innerHTML = scores
-          ? CLASSES.map((c, i) =>
-              `${c}: ${scores[i]?.toFixed(2) ?? "N/A"}`
-            ).join("<br>")
-          : "No scores detected";
+        // Debug: show all class probabilities (helps tuning)
+        box.innerHTML = CLASSES.map((c, i) =>
+          `${c}: ${(scores[i] ?? 0).toFixed(2)}`
+        ).join("<br>");
 
-        // only trigger when above threshold and new label
-        if (conf > CONF && label && label !== last) {
+        const { label, conf } = bestLabel(scores);
+
+        // Only act if: high conf, allowed prefix, not same as last fired
+        if (conf > CONF && label && label.startsWith(ALLOWED_PREFIX) && label !== last) {
           last = label;
-          console.log("Recognized label:", label);
-
-          // map full label to simple cmd
-          const labelToCmd = {
-            "Dhruv_forward":  "forward",
-            "Dhruv_backward": "backward",
-            "Dhruv_left":     "left",
-            "Dhruv_right":    "right"
-          };
+          console.log("Recognized (allowed):", label, conf.toFixed(2));
           const cmd = labelToCmd[label];
           if (cmd) send(cmd);
         }
       }, {
-        includeSpectrogram:    true,
-        probabilityThreshold:  CONF,
+        includeSpectrogram:   true,
+        probabilityThreshold: CONF,
         overlapFactor:        0.5
       });
 
@@ -165,6 +164,7 @@
     function stopListening() {
       recognizer?.stopListening();
       document.getElementById("stat").innerText = "Voice stopped.";
+      last = ""; // reset for next start
     }
   </script>
 </body>

@@ -9,7 +9,7 @@ const char* password = "P@nch1MAN";
 WebServer server(80);
 String lastCommand = "";
 
-// ─── FRONT Motor-Driver Pins ────────────────────────────────────
+// ─── FRONT Motor-Driver Pins ─────────────────────────────────────
 #define IN1_F 13
 #define IN2_F 12
 #define IN3_F 14
@@ -17,7 +17,7 @@ String lastCommand = "";
 #define ENA_F 25
 #define ENB_F 26
 
-// ─── BACK Motor-Driver Pins ─────────────────────────────────────
+// ─── BACK Motor-Driver Pins ──────────────────────────────────────
 #define IN1_B 18
 #define IN2_B 19
 #define IN3_B 21
@@ -26,7 +26,7 @@ String lastCommand = "";
 #define ENB_B 5
 
 // ─── Global speed (0-255) ───────────────────────────────────────
-const uint8_t MOTOR_SPEED = 150;   // tweak for faster/slower spin
+const uint8_t MOTOR_SPEED = 150;   // lower = slower
 
 // ─── Helpers ─────────────────────────────────────────────────────
 void setupMotors() {
@@ -39,21 +39,21 @@ void setupMotors() {
   pinMode(ENA_B, OUTPUT); pinMode(ENB_B, OUTPUT);
 }
 
-void enableAll() {
+void enableAll() {                        // apply PWM to every EN pin
   analogWrite(ENA_F, MOTOR_SPEED);
   analogWrite(ENB_F, MOTOR_SPEED);
   analogWrite(ENA_B, MOTOR_SPEED);
   analogWrite(ENB_B, MOTOR_SPEED);
 }
 
-void stopAll() {
+void stopAll() {                          // brake every wheel
   digitalWrite(IN1_F, LOW); digitalWrite(IN2_F, LOW);
   digitalWrite(IN3_F, LOW); digitalWrite(IN4_F, LOW);
-  analogWrite (ENA_F, 0);   analogWrite (ENB_F, 0);
+  analogWrite (ENA_F, 0);  analogWrite (ENB_F, 0);
 
   digitalWrite(IN1_B, LOW); digitalWrite(IN2_B, LOW);
   digitalWrite(IN3_B, LOW); digitalWrite(IN4_B, LOW);
-  analogWrite (ENA_B, 0);   analogWrite (ENB_B, 0);
+  analogWrite (ENA_B, 0);  analogWrite (ENB_B, 0);
 }
 
 // ─── Motions ─────────────────────────────────────────────────────
@@ -77,27 +77,27 @@ void moveBackwardAllMotors() {
   enableAll();
 }
 
-void turnLeft() {            // pivot left
+void turnLeft() {                          // pivot left
   // Left wheels backward
-  digitalWrite(IN1_F, LOW);  digitalWrite(IN2_F, HIGH);
-  digitalWrite(IN1_B, LOW);  digitalWrite(IN2_B, HIGH);
+  digitalWrite(IN1_F, HIGH);  digitalWrite(IN2_F, LOW);
+  digitalWrite(IN1_B, HIGH);  digitalWrite(IN2_B, LOW);
   // Right wheels forward
-  digitalWrite(IN3_F, HIGH); digitalWrite(IN4_F, LOW);
-  digitalWrite(IN3_B, HIGH); digitalWrite(IN4_B, LOW);
+  digitalWrite(IN3_F, LOW); digitalWrite(IN4_F, HIGH);
+  digitalWrite(IN3_B, LOW); digitalWrite(IN4_B, HIGH);
   enableAll();
 }
 
-void turnRight() {           // pivot right
+void turnRight() {                         // pivot right
   // Left wheels forward
-  digitalWrite(IN1_F, HIGH); digitalWrite(IN2_F, LOW);
-  digitalWrite(IN1_B, HIGH); digitalWrite(IN2_B, LOW);
+  digitalWrite(IN1_F, LOW); digitalWrite(IN2_F, HIGH);
+  digitalWrite(IN1_B, LOW); digitalWrite(IN2_B, HIGH);
   // Right wheels backward
-  digitalWrite(IN3_F, LOW);  digitalWrite(IN4_F, HIGH);
-  digitalWrite(IN3_B, LOW);  digitalWrite(IN4_B, HIGH);
+  digitalWrite(IN3_F, HIGH);  digitalWrite(IN4_F, LOW);
+  digitalWrite(IN3_B, HIGH);  digitalWrite(IN4_B, LOW);
   enableAll();
 }
 
-// ─── HTTP handler ───────────────────────────────────────────────
+// ─── HTTP handler ────────────────────────────────────────────────
 void handleCommand() {
   server.sendHeader("Access-Control-Allow-Origin", "*");
   if (server.hasArg("cmd")) {
@@ -107,7 +107,11 @@ void handleCommand() {
   server.send(200, "text/plain", "#done");
 }
 
-// ─── Arduino setup / loop ───────────────────────────────────────
+static bool isOneOf(const String& s, const char* a, const char* b) {
+  return (s == a) || (s == b);
+}
+
+// ─── Arduino setup / loop ────────────────────────────────────────
 void setup() {
   Serial.begin(115200);
   setupMotors();
@@ -128,14 +132,14 @@ void loop() {
   server.handleClient();
 
   if (lastCommand != "") {
-    if      (lastCommand == "Dhruv_forward")  moveForwardAllMotors();
-    else if (lastCommand == "Dhruv_backward") moveBackwardAllMotors();
-    else if (lastCommand == "Dhruv_right")    turnLeft();   // swapped!
-    else if (lastCommand == "Dhruv_left")     turnRight();  // swapped!
-    else                                       Serial.println("Unknown command: " + lastCommand);
+    if      (lastCommand == "Dhruv_go") moveForwardAllMotors();
+    else if (lastCommand == "Dhruv_down") moveBackwardAllMotors();
+    else if (lastCommand == "Dhruv_left") turnLeft();
+    else if (lastCommand == "Dhruv_right") turnRight();
+    else Serial.println("Unknown command: " + lastCommand);
 
-    delay(500);          // run for ½ s
-    stopAll();           // then brake
-    lastCommand = "";    // clear
+    delay(500);
+    stopAll();
+    lastCommand = "";
   }
-}
+}   
